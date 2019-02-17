@@ -5,9 +5,14 @@
 ## 基本功能
 
 1. 静态文件及文件夹目录访问
+2. 通过可执行文件启动服务
+    - 创建 bin/www 可执行脚本文件，配置命令行工具参数，添加服务器启动
+    - 修改 package.json ，添加 bin ，用于 npm link 环境变量后，可以直接作为命令使用
+    - 发布成 npm 包，可以安装当做工具使用
 
 ## 目录结构
 
+```bash
 ├── README.md
 ├── bin
 ├── package.json
@@ -24,13 +29,19 @@
     ├── config.js 服务配置文件
     └── template 模板文件
         └── fileList.html 文件夹目录展示模板
+```
 
 ## 启动
 
 ```bash
 $ npm install
 
-$ node src/app.js
+$ npm link
+
+$ set DEBUG=static:*    // window 设置启动 debug
+$ export DEBUG=static:* // mac/linux 设置启动 debug
+
+$ static-server
 ```
 
 ## 第三方包说明
@@ -72,6 +83,8 @@ $ node src/app.js
         ```
 - [handlebars](http://handlebarsjs.com/)
     - 模板引擎
+- [yargs](https://github.com/yargs/yargs)
+    - 获取命令行参数
 
 ## 调试
 
@@ -87,3 +100,15 @@ $ node src/app.js
         $ supervisor node app.js
         ```
 - 使用 vscode 调试功能
+
+## 将项目发布成 npm 包
+
+- npm login/adduser
+    - 使用 npm 站的登录
+- npm publish 发布包
+    - 常见错误
+        1. 非 npm 源，如使用 nrm 管理源且切换到了非 npm 源
+        2. 权限不足，根据提示进行操作
+        3. 包名字不能使用，更换
+        4. 同一版本不能再次发布，可以更新版本号后发布，或使用 `npm updata`
+- npm update xxx 更新包

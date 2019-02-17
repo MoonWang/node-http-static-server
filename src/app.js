@@ -20,7 +20,7 @@ let handlebars = require('handlebars');
 // 给 console 添加样式
 let chalk = require('chalk');
 // 用于调试，替代 console 
-process.env.DEBUG = 'static:*';
+// process.env.DEBUG = 'static:*';
 let debug = require('debug')('static:app');
 
 // ===== 自定义 =====
@@ -33,9 +33,11 @@ function list() {
     return handlebars.compile(tmpl);
 }
 class Server {
-    constructor() {
+    constructor(argv) {
         // 模板函数
         this.list = list();
+        // 配合参数
+        this.config = Object.assign({}, config, argv);
     }
     // 服务器启动方法
     start() {
@@ -43,8 +45,8 @@ class Server {
         // 监听客户端请求，回调函数提取出去
         server.on('request', this.request.bind(this));
         // 监听启动，给与用户提示
-        server.listen(config.port, () => {
-            let url = `http://${config.host}:${config.port}`;
+        server.listen(this.config.port, () => {
+            let url = `http://${this.config.host}:${this.config.port}`;
             debug(`server started at ${chalk.green(url)}`);
         });
     }
@@ -53,7 +55,11 @@ class Server {
         // 1. 静态资源访问
         // 1.1 需要先取到客户端请求的文件或文件夹路径，需判断
         let { pathname } = url.parse(req.url);
-        let filepath = path.join(config.root, pathname);
+
+        // 2.1 暂时屏蔽网站图标请求
+        if(pathname == '/favicon.ico') return this.sendErr(req, res);
+
+        let filepath = path.join(this.config.root, pathname);
         try {
             // 1.2 判断路径是否存在，存在的话是文件还是文件夹
             let statObj = await stat(filepath);
@@ -85,10 +91,6 @@ class Server {
         res.setHeader('Content-Type', mime.getType(filepath));
         fs.createReadStream(filepath).pipe(res);
     }
-    // 发送静态文件目录给客户端
-    sendFilePath(req, res, filepath, statObj) {
-                    
-    }
     // 返回错误给客户端
     sendErr(req, res) {
         res.statusCode = 500;
@@ -96,6 +98,8 @@ class Server {
     }
 }
 
-let server = new Server();
-// 启动服务
-server.start();
+// let server = new Server();
+// // 启动服务
+// server.start();
+
+module.exports = Server;
