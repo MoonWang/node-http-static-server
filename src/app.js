@@ -6,6 +6,7 @@ let http = require('http');
 let path = require('path');
 let url = require('url');
 let fs = require('fs');
+let zlib = require('zlib');
 
 // 包装 api 成 promise 方法
 let { promisify, inspect } = require('util');
@@ -19,8 +20,9 @@ let mime = require('mime');
 let handlebars = require('handlebars');
 // 给 console 添加样式
 let chalk = require('chalk');
+// 本地调试时用，可以省略环境变量设置
+process.env.DEBUG = 'static:*';
 // 用于调试，替代 console 
-// process.env.DEBUG = 'static:*';
 let debug = require('debug')('static:app');
 
 // ===== 自定义 =====
@@ -89,17 +91,40 @@ class Server {
     sendFile(req, res, filepath, statObj) {
         // code 200 默认，可以不写，content-type 需要设置
         res.setHeader('Content-Type', mime.getType(filepath));
-        fs.createReadStream(filepath).pipe(res);
+        // 3.2 拿到可用压缩方法后，在输出前，使用方法处理文件流
+        let encoding = this.getEncoding(req, res);
+        if(encoding) {
+            // eg: http://localhost:8080/test.html 查看压缩效果
+            fs.createReadStream(filepath).pipe(encoding).pipe(res);
+        } else {
+            fs.createReadStream(filepath).pipe(res);
+        }
     }
     // 返回错误给客户端
     sendErr(req, res) {
         res.statusCode = 500;
         res.end(`there is something wrong in the server! please try later!`)
     }
+    // 3.1 根据请求头获取可用压缩方法
+    getEncoding(req, res) {
+        // eg: 请求头 Accept-Encoding: gzip, deflate
+        let acceptEncoding = req.headers['accept-encoding'];
+        if(/\bgzip\b/.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'gzip');
+            return zlib.createGzip();
+        } else if(/\bdeflate\b/.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'deflate');
+            return zlib.createDeflate();
+        } else {
+            return null;
+        }
+    }
 }
 
-// let server = new Server();
-// // 启动服务
-// server.start();
+// 本地调试时用， app.js + vscode 调试
+let server = new Server();
+// 启动服务
+server.start();
 
-module.exports = Server;
+// 命令行工具启动时用
+// module.exports = Server;
