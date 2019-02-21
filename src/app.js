@@ -7,6 +7,7 @@ let path = require('path');
 let url = require('url');
 let fs = require('fs');
 let zlib = require('zlib');
+let crypto = require('crypto');
 
 // 包装 api 成 promise 方法
 let { promisify, inspect } = require('util');
@@ -59,16 +60,16 @@ class Server {
         let { pathname } = url.parse(req.url);
 
         // 2.1 暂时屏蔽网站图标请求
-        if(pathname == '/favicon.ico') return this.sendErr(req, res);
+        if (pathname == '/favicon.ico') return this.sendErr(req, res);
 
         let filepath = path.join(this.config.root, pathname);
         try {
             // 1.2 判断路径是否存在，存在的话是文件还是文件夹
             let statObj = await stat(filepath);
-            if(statObj.isFile()) {
+            if (statObj.isFile()) {
                 // 1.3 请求文件
                 this.sendFile(req, res, filepath, statObj);
-            } else if(statObj.isDirectory()) {
+            } else if (statObj.isDirectory()) {
                 // 1.4 请求文件夹，需要用模板引擎返回文件列表
                 let files = await readdir(filepath);
                 files = files.map(file => ({
@@ -82,18 +83,22 @@ class Server {
                 res.setHeader('Content-Type', 'text/html');
                 res.end(html);
             }
-        } catch(e) {
+        } catch (e) {
             debug(inspect(e));
             this.sendErr(req, res);
         }
     }
     // 发送静态文件给客户端
-    sendFile(req, res, filepath, statObj) {
+    async sendFile(req, res, filepath, statObj) {
+        // 4.2 判断缓存是否可用，返回 true 则表示缓存可用
+        let canUseCache = await this.handleCache(req, res, filepath, statObj);
+        if (canUseCache) return;
+        
         // code 200 默认，可以不写，content-type 需要设置
         res.setHeader('Content-Type', mime.getType(filepath));
         // 3.2 拿到可用压缩方法后，在输出前，使用方法处理文件流
         let encoding = this.getEncoding(req, res);
-        if(encoding) {
+        if (encoding) {
             // eg: http://localhost:8080/test.html 查看压缩效果
             fs.createReadStream(filepath).pipe(encoding).pipe(res);
         } else {
@@ -109,15 +114,58 @@ class Server {
     getEncoding(req, res) {
         // eg: 请求头 Accept-Encoding: gzip, deflate
         let acceptEncoding = req.headers['accept-encoding'];
-        if(/\bgzip\b/.test(acceptEncoding)) {
+        if (/\bgzip\b/.test(acceptEncoding)) {
             res.setHeader('Content-Encoding', 'gzip');
             return zlib.createGzip();
-        } else if(/\bdeflate\b/.test(acceptEncoding)) {
+        } else if (/\bdeflate\b/.test(acceptEncoding)) {
             res.setHeader('Content-Encoding', 'deflate');
             return zlib.createDeflate();
         } else {
             return null;
         }
+    }
+    // 4.1 判断缓存是否可用，判断过程可以参考 http://t.cn/EVsEAHh
+    handleCache(req, res, filepath, statObj) {
+        // http1.0 协商缓存 最后修改时间，对应响应头 Last-Modified
+        let ifModifiedSince = req.headers['if-modified-since'];
+        // http1.1 协商缓存 资源内容对应的 hash 标识，对应响应头 ETag
+        let ifNoneMatch = req.headers['if-none-match'];
+
+        // 读取文件用于获取 ETag
+        let out = fs.createReadStream(filepath);
+        let md5 = crypto.createHash('md5');
+        return new Promise((resolve, reject) => {
+            out.on('data', data => {
+                md5.update(data);
+            });
+            out.on('end', () => {
+                // 根据文件内容生成 信息摘要值 作为 ETag
+                let etag = md5.digest('hex');
+                let lastModified = statObj.ctime.toGMTString();
+                
+                // 先判断 ETag 再判断 Last-Modified
+                if (ifNoneMatch && ifNoneMatch == etag ||
+                    ifModifiedSince && ifModifiedSince == lastModified) {
+                    res.writeHead(304);
+                    res.end();
+                    resolve(true);
+                } else {
+                    let cacheDuration = 30;
+                    // 设置 http1.1 强缓存 资源有效期（有效时间长度）
+                    res.setHeader('cache-control', `max-age=${cacheDuration}`);
+                    // 设置 http1.0 强缓存 资源有效期（失效时间点）
+                    res.setHeader('Expires', new Date(Date.now() + cacheDuration * 1000).toGMTString());
+                    // 设置 协商缓存
+                    res.setHeader('ETag', etag);
+                    res.setHeader('Last-Modified', lastModified);
+                    resolve(false);
+                }
+            });
+            out.on('error', err => {
+                debug(err);
+                reject(err);
+            });
+        });
     }
 }
 
