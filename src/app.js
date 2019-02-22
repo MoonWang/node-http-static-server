@@ -185,9 +185,9 @@ class Server {
 }
 
 // 本地调试时用， app.js + vscode 调试
-let server = new Server();
-// 启动服务
-server.start();
+// let server = new Server();
+// // 启动服务
+// server.start();
 
 // 命令行工具启动时用
-// module.exports = Server;
+module.exports = Server;
