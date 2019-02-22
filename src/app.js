@@ -94,6 +94,21 @@ class Server {
         let canUseCache = await this.handleCache(req, res, filepath, statObj);
         if (canUseCache) return;
         
+        // 5.1 防盗链，有 refer 时，表明为页面引用，才需要判断是否命中防盗链
+        // 且为指定 mime 类型(此处只判断了图片，根据具体需要来处理，正常情况下应该有单独的图片服务器)
+        let refer = req.headers['referer'] || req.headers['refer'];
+        let type = mime.getType(filepath);
+        if (refer && /\bimage\b/.test(type)) {
+            // 5.2 获取 refer 地址和请求源 url，判断是否相同，如果不同是否在白名单中
+            let referHostname = url.parse(refer, true).hostname;
+            let curretnHostName = url.parse(req.url, true).hostname;
+            if (referHostname != curretnHostName && this.config.whiteList.indexOf(referHostname) == -1) {
+                res.setHeader('Content-Type', 'image/jpg');
+                fs.createReadStream(path.join(this.config.root, 'images', 'forbidden.jpg')).pipe(res);
+                return;
+            }
+        }
+
         // code 200 默认，可以不写，content-type 需要设置
         res.setHeader('Content-Type', mime.getType(filepath));
         // 3.2 拿到可用压缩方法后，在输出前，使用方法处理文件流

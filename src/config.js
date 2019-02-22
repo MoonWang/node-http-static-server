@@ -8,5 +8,11 @@ module.exports = {
     // 设置监听端口
     port: 8080,       
     // 设置静态服务器根目录
-    root: path.resolve(__dirname, '..', 'public')
+    root: path.resolve(__dirname, '..', 'public'),
+
+    // 防盗链白名单
+    whiteList: [
+        '192.168.0.1',
+        'localhost'
+    ]
 };
